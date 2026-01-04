@@ -17,6 +17,7 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
     """
     messages = [{"role": "user", "content": user_query}]
 
+    print(f"Stage 1: Querying {len(COUNCIL_MODELS)} models for query: '{user_query}'")
     # Query all models in parallel
     responses = await query_models_parallel(COUNCIL_MODELS, messages)
 
@@ -29,6 +30,7 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
                 "response": response.get('content', '')
             })
 
+    print(f"Stage 1 complete: {len(stage1_results)} successful responses.")
     return stage1_results
 
 
@@ -94,6 +96,7 @@ Now provide your evaluation and ranking:"""
 
     messages = [{"role": "user", "content": ranking_prompt}]
 
+    print(f"Stage 2: Asking {len(COUNCIL_MODELS)} models to rank {len(stage1_results)} responses")
     # Get rankings from all council models in parallel
     responses = await query_models_parallel(COUNCIL_MODELS, messages)
 
@@ -158,6 +161,7 @@ Provide a clear, well-reasoned final answer that represents the council's collec
 
     messages = [{"role": "user", "content": chairman_prompt}]
 
+    print(f"Stage 3: Asking Chairman ({CHAIRMAN_MODEL}) to synthesize")
     # Query the chairman model
     response = await query_model(CHAIRMAN_MODEL, messages)
 
@@ -274,8 +278,8 @@ Title:"""
 
     messages = [{"role": "user", "content": title_prompt}]
 
-    # Use gemini-2.5-flash for title generation (fast and cheap)
-    response = await query_model("google/gemini-2.5-flash", messages, timeout=30.0)
+    # Use a free model for title generation
+    response = await query_model("mistralai/mistral-7b-instruct:free", messages, timeout=30.0)
 
     if response is None:
         # Fallback to a generic title
