@@ -122,26 +122,36 @@ async def get_pricing_map():
 
 def prepare_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     """
-    Prepare a simplified history for the council.
-    Only includes User content and successful Stage 3 Chairman response content.
+    Prepare an optimized history for the council.
+    Uses "Consensus History": only User messages and successful Chairman syntheses.
+    Implements a sliding window to prevent token overflow.
     """
     history = []
-    for msg in messages:
+    # Only keep the last 10 turns (20 messages max) to keep context lean
+    # but sufficient for long conversations.
+    relevant_messages = messages[-20:] if len(messages) > 20 else messages
+    
+    for msg in relevant_messages:
         if msg.get("role") == "user":
             history.append({"role": "user", "content": msg["content"]})
         elif msg.get("role") == "assistant" and "stage3" in msg:
             response = msg["stage3"].get("response", "")
             # Skip error responses
             if response and not response.startswith("Error:"):
+                # Label it as the Council's consensus to reinforce identity
                 history.append({"role": "assistant", "content": response})
     
-    # If we have history, add a small system hint as the first message to help the LLMs
-    if history:
-        history.insert(0, {
-            "role": "system", 
-            "content": "You are participating in a multi-turn conversation. Focus on the previous context while answering the current request."
-        })
-        
+    # Enhanced System Prompt to define the Council's Identity
+    system_hint = {
+        "role": "system", 
+        "content": (
+            "You are an expert member of the LLM Council. This is a multi-turn conversation. "
+            "The messages from 'assistant' represent the final consensus (Chairman's synthesis) "
+            "of previous turns. Use this as your shared memory and source of truth."
+        )
+    }
+    
+    history.insert(0, system_hint)
     return history
 
 

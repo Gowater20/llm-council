@@ -131,6 +131,12 @@ export default function ChatInterface({
       </div>
 
       <div className="input-area">
+        {conversation.messages.length > 0 && (
+          <div className="context-badge">
+            <span className="dot"></span>
+            Active Memory: {Math.min(10, Math.floor(conversation.messages.length / 2))} council turns
+          </div>
+        )}
         {conversation.messages.length === 0 && (
           <div className="council-config-bar">
             <span className="config-info">

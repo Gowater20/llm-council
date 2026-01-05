@@ -5,8 +5,12 @@ import json
 import random
 import re
 from typing import List, Dict, Any, Tuple, Optional
-from .openrouter import query_model, calculate_cost
-from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
+try:
+    from .openrouter import query_model, calculate_cost
+    from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
+except ImportError:
+    from openrouter import query_model, calculate_cost
+    from config import COUNCIL_MODELS, CHAIRMAN_MODEL
 
 async def stage1_collect_responses(user_query: str, council_models: List[str] = None, history: List[Dict[str, str]] = None) -> List[Dict[str, Any]]:
     """
@@ -21,8 +25,13 @@ async def stage1_collect_responses(user_query: str, council_models: List[str] = 
     
     # Add a memory-reinforcing instruction for models in Stage 1
     query_with_context = user_query
-    if history:
-        query_with_context = f"[Context: This is a follow-up in a multi-turn chat. Please refer to previous turns if necessary.]\n\nQuestion: {user_query}"
+    if history and len(history) > 1: # history[0] is always the system_hint
+        # The history already contains previous Chairman syntheses as 'assistant' messages
+        query_with_context = (
+            f"[Current Council Turn: Follow-up]\n"
+            f"Please review the previous consensus in the chat history and answer the new question.\n\n"
+            f"New Question: {user_query}"
+        )
         
     messages.append({"role": "user", "content": query_with_context})
 
