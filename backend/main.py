@@ -39,6 +39,7 @@ class SendMessageRequest(BaseModel):
     content: str
     council_models: List[str] = None
     chairman_model: str = None
+    prompt_id: str = None
 
 
 class ConversationMetadata(BaseModel):
@@ -120,15 +121,42 @@ async def get_pricing_map():
     return {m['id']: m['pricing'] for m in models if 'id' in m and 'pricing' in m}
 
 
-def prepare_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+try:
+    from .prompts import load_prompts, add_prompt, delete_prompt, get_prompt_by_id
+except ImportError:
+    from prompts import load_prompts, add_prompt, delete_prompt, get_prompt_by_id
+
+# ... (existing code)
+
+class PromptModel(BaseModel):
+    id: str
+    name: str
+    description: str
+    system_prompt: str
+    chairman_instruction: str
+
+@app.get("/api/prompts")
+async def get_prompts():
+    return load_prompts()
+
+@app.post("/api/prompts")
+async def create_prompt(prompt: PromptModel):
+    add_prompt(prompt.dict())
+    return {"status": "success"}
+
+@app.delete("/api/prompts/{prompt_id}")
+async def remove_prompt(prompt_id: str):
+    delete_prompt(prompt_id)
+    return {"status": "success"}
+
+# Modify prepare_history to accept system_content override
+def prepare_history(messages: List[Dict[str, Any]], system_content: str = None) -> List[Dict[str, str]]:
     """
     Prepare an optimized history for the council.
-    Uses "Consensus History": only User messages and successful Chairman syntheses.
-    Implements a sliding window to prevent token overflow.
+    Uses "Consensus History" and a sliding window.
     """
     history = []
-    # Only keep the last 10 turns (20 messages max) to keep context lean
-    # but sufficient for long conversations.
+    # Only keep the last 10 turns (20 messages max)
     relevant_messages = messages[-20:] if len(messages) > 20 else messages
     
     for msg in relevant_messages:
@@ -136,19 +164,19 @@ def prepare_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
             history.append({"role": "user", "content": msg["content"]})
         elif msg.get("role") == "assistant" and "stage3" in msg:
             response = msg["stage3"].get("response", "")
-            # Skip error responses
             if response and not response.startswith("Error:"):
-                # Label it as the Council's consensus to reinforce identity
                 history.append({"role": "assistant", "content": response})
     
-    # Enhanced System Prompt to define the Council's Identity
+    # Use provided system content or default
+    final_system_content = system_content or (
+        "You are an expert member of the LLM Council. This is a multi-turn conversation. "
+        "The messages from 'assistant' represent the final consensus (Chairman's synthesis) "
+        "of previous turns. Use this as your shared memory and source of truth."
+    )
+
     system_hint = {
         "role": "system", 
-        "content": (
-            "You are an expert member of the LLM Council. This is a multi-turn conversation. "
-            "The messages from 'assistant' represent the final consensus (Chairman's synthesis) "
-            "of previous turns. Use this as your shared memory and source of truth."
-        )
+        "content": final_system_content
     }
     
     history.insert(0, system_hint)
@@ -218,29 +246,37 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
     Send a message and stream the 3-stage council process.
     Returns Server-Sent Events as each stage completes.
     """
-    # Check if conversation exists
+    # Verify conversation exists
     conversation = storage.get_conversation(conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # Check if this is the first message
-    is_first_message = len(conversation["messages"]) == 0
+    # 1. Add user message
+    storage.add_user_message(conversation_id, request.content)
+
+    # Get pricing map
+    pricing_map = await get_pricing_map()
+
+    # Get prompt settings
+    prompt_settings = get_prompt_by_id(request.prompt_id or "default")
+    system_prompt = prompt_settings["system_prompt"] if prompt_settings else None
+    chairman_instruction = prompt_settings["chairman_instruction"] if prompt_settings else None
+
+    # Prepare history for context with custom system prompt
+    history = prepare_history(conversation["messages"], system_content=system_prompt)
 
     async def event_generator():
         try:
-            # Add user message
-            storage.add_user_message(conversation_id, request.content)
-
+            # Check if this is the first message (after adding user message)
+            is_first_message = len(conversation["messages"]) == 0 # This will be 0 if it was truly the first message before adding the user message.
+            # If the conversation was empty before adding the user message, it's the first message.
+            # The `conversation` object loaded here is before the `add_message` call, so its `messages` list reflects the state before the current user message.
+            # So, if `len(conversation["messages"])` is 0, it means the user message just added is the first one.
+            
             # Start title generation in parallel (don't await yet)
             title_task = None
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
-
-            # Get pricing map
-            pricing_map = await get_pricing_map()
-
-            # Prepare history for context
-            history = prepare_history(conversation["messages"])
 
             # Stage 1: Collect responses
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"

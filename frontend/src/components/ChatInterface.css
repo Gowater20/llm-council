@@ -205,6 +205,32 @@
   color: #555;
 }
 
+.persona-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  padding: 4px 10px;
+  border-radius: 20px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.persona-badge:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+}
+
+.persona-icon {
+  font-size: 1.1em;
+}
+
+.persona-name {
+  font-weight: 600;
+}
+
 .config-info strong {
   color: #333;
 }

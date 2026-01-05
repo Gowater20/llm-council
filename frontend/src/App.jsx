@@ -3,50 +3,46 @@ import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import ModelSelector from './components/ModelSelector';
 import { api } from './api';
+import PromptManager from './components/PromptManager';
 import './App.css';
 
 function App() {
   const [conversations, setConversations] = useState([]);
-  const [currentConversationId, setCurrentConversationId] = useState(null);
-  const [currentConversation, setCurrentConversation] = useState(null);
+  const [activeConversation, setActiveConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isConfigOpen, setIsConfigOpen] = useState(false);
+  
+  // UI State
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showConfig, setShowConfig] = useState(false);
+  const [showPrompts, setShowPrompts] = useState(false);
 
-  // Council configuration state with defaults and localStorage
-  const [selectedCouncil, setSelectedCouncil] = useState(() => {
-    const saved = localStorage.getItem('llm_council_selection');
-    return saved ? JSON.parse(saved) : [
-      "google/gemini-2.0-flash-exp:free",
-      "mistralai/mistral-7b-instruct:free",
-      "meta-llama/llama-3.3-70b-instruct:free"
-    ];
-  });
-
-  const [selectedChairman, setSelectedChairman] = useState(() => {
-    const saved = localStorage.getItem('llm_chairman_selection');
-    return saved ? JSON.parse(saved) : "meta-llama/llama-3.3-70b-instruct:free";
+  // Council State
+  const [selectedPrompt, setSelectedPrompt] = useState({ id: 'default', name: 'Default Council' });
+  
+  // Initialize from localStorage or defaults
+  const [councilConfig, setCouncilConfig] = useState(() => {
+    const savedCouncil = localStorage.getItem('llm_council_selection');
+    const savedChairman = localStorage.getItem('llm_chairman_selection');
+    return {
+      council: savedCouncil ? JSON.parse(savedCouncil) : [
+        "google/gemini-2.0-flash-exp:free",
+        "mistralai/mistral-7b-instruct:free",
+        "meta-llama/llama-3.3-70b-instruct:free"
+      ],
+      chairman: savedChairman ? JSON.parse(savedChairman) : "meta-llama/llama-3.3-70b-instruct:free"
+    };
   });
 
   // Save selection to localStorage
   useEffect(() => {
-    localStorage.setItem('llm_council_selection', JSON.stringify(selectedCouncil));
-  }, [selectedCouncil]);
-
-  useEffect(() => {
-    localStorage.setItem('llm_chairman_selection', JSON.stringify(selectedChairman));
-  }, [selectedChairman]);
+    localStorage.setItem('llm_council_selection', JSON.stringify(councilConfig.council));
+    localStorage.setItem('llm_chairman_selection', JSON.stringify(councilConfig.chairman));
+  }, [councilConfig]);
 
   // Load conversations on mount
   useEffect(() => {
     loadConversations();
   }, []);
-
-  // Load conversation details when selected
-  useEffect(() => {
-    if (currentConversationId) {
-      loadConversation(currentConversationId);
-    }
-  }, [currentConversationId]);
 
   const loadConversations = async () => {
     try {
@@ -60,7 +56,7 @@ function App() {
   const loadConversation = async (id) => {
     try {
       const conv = await api.getConversation(id);
-      setCurrentConversation(conv);
+      setActiveConversation(conv);
     } catch (error) {
       console.error('Failed to load conversation:', error);
     }
@@ -73,14 +69,15 @@ function App() {
         { id: newConv.id, created_at: newConv.created_at, message_count: 0 },
         ...conversations,
       ]);
-      setCurrentConversationId(newConv.id);
+      // Assuming new conversation has empty messages initially
+      setActiveConversation({ ...newConv, messages: [] });
     } catch (error) {
       console.error('Failed to create conversation:', error);
     }
   };
 
   const handleSelectConversation = (id) => {
-    setCurrentConversationId(id);
+    loadConversation(id);
   };
 
   const handleDeleteConversation = async (e, id) => {
@@ -90,9 +87,8 @@ function App() {
     try {
       await api.deleteConversation(id);
       setConversations(conversations.filter(c => c.id !== id));
-      if (currentConversationId === id) {
-        setCurrentConversationId(null);
-        setCurrentConversation(null);
+      if (activeConversation?.id === id) {
+        setActiveConversation(null);
       }
     } catch (error) {
       console.error('Failed to delete conversation:', error);
@@ -100,13 +96,13 @@ function App() {
   };
 
   const handleSendMessage = async (content) => {
-    if (!currentConversationId) return;
+    if (!activeConversation) return;
 
     setIsLoading(true);
     try {
       // Optimistically add user message to UI
       const userMessage = { role: 'user', content };
-      setCurrentConversation((prev) => ({
+      setActiveConversation((prev) => ({
         ...prev,
         messages: [...prev.messages, userMessage],
       }));
@@ -126,19 +122,19 @@ function App() {
       };
 
       // Add the partial assistant message
-      setCurrentConversation((prev) => ({
+      setActiveConversation((prev) => ({
         ...prev,
         messages: [...prev.messages, assistantMessage],
       }));
 
       // Send message with streaming
       await api.sendMessageStream(
-        currentConversationId, 
+        activeConversation.id, 
         content, 
         (eventType, event) => {
           switch (eventType) {
             case 'stage1_start':
-              setCurrentConversation((prev) => {
+              setActiveConversation((prev) => {
                 const messages = [...prev.messages];
                 const lastMsg = messages[messages.length - 1];
                 lastMsg.loading.stage1 = true;
@@ -147,7 +143,7 @@ function App() {
               break;
 
             case 'stage1_complete':
-              setCurrentConversation((prev) => {
+              setActiveConversation((prev) => {
                 const messages = [...prev.messages];
                 const lastMsg = messages[messages.length - 1];
                 lastMsg.stage1 = event.data;
@@ -157,7 +153,7 @@ function App() {
               break;
 
             case 'stage2_start':
-              setCurrentConversation((prev) => {
+              setActiveConversation((prev) => {
                 const messages = [...prev.messages];
                 const lastMsg = messages[messages.length - 1];
                 lastMsg.loading.stage2 = true;
@@ -166,7 +162,7 @@ function App() {
               break;
 
             case 'stage2_complete':
-              setCurrentConversation((prev) => {
+              setActiveConversation((prev) => {
                 const messages = [...prev.messages];
                 const lastMsg = messages[messages.length - 1];
                 lastMsg.stage2 = event.data;
@@ -177,7 +173,7 @@ function App() {
               break;
 
             case 'stage3_start':
-              setCurrentConversation((prev) => {
+              setActiveConversation((prev) => {
                 const messages = [...prev.messages];
                 const lastMsg = messages[messages.length - 1];
                 lastMsg.loading.stage3 = true;
@@ -186,7 +182,7 @@ function App() {
               break;
 
             case 'stage3_complete':
-              setCurrentConversation((prev) => {
+              setActiveConversation((prev) => {
                 const messages = [...prev.messages];
                 const lastMsg = messages[messages.length - 1];
                 lastMsg.stage3 = event.data;
@@ -203,29 +199,34 @@ function App() {
               break;
 
           case 'title_complete':
-            // Reload conversations to get updated title
-            loadConversations();
-            break;
+              // Reload conversations to get updated title
+              loadConversations();
+              break;
 
-          case 'complete':
-            // Stream complete, reload conversations list
-            loadConversations();
-            setIsLoading(false);
-            break;
+            case 'complete':
+              // Stream complete, reload conversations list
+              loadConversations();
+              setIsLoading(false);
+              break;
 
-          case 'error':
-            console.error('Stream error:', event.message);
-            setIsLoading(false);
-            break;
+            case 'error':
+              console.error('Stream error:', event.message);
+              setIsLoading(false);
+              break;
 
-          default:
-            console.log('Unknown event type:', eventType);
-        }
-      }, selectedCouncil, selectedChairman);
+            default:
+              // Handled by updateConversationState
+              break;
+          }
+        }, 
+        councilConfig.council, 
+        councilConfig.chairman,
+        selectedPrompt.id // Pass the selected prompt ID
+      );
     } catch (error) {
       console.error('Failed to send message:', error);
       // Remove optimistic messages on error
-      setCurrentConversation((prev) => ({
+      setActiveConversation((prev) => ({
         ...prev,
         messages: prev.messages.slice(0, -2),
       }));
@@ -237,26 +238,40 @@ function App() {
     <div className="app">
       <Sidebar
         conversations={conversations}
-        currentConversationId={currentConversationId}
+        currentConversationId={activeConversation?.id}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
         onDeleteConversation={handleDeleteConversation}
+        isOpen={sidebarOpen}
+        onToggle={() => setSidebarOpen(!sidebarOpen)}
       />
       <ChatInterface
-        conversation={currentConversation}
+        conversation={activeConversation} // Renamed from currentConversation
         onSendMessage={handleSendMessage}
         isLoading={isLoading}
-        onOpenConfig={() => setIsConfigOpen(true)}
-        councilConfig={{ selectedCouncil, selectedChairman }}
+        onOpenConfig={() => setShowConfig(true)} // Renamed from setIsConfigOpen
+        councilConfig={councilConfig} // Now passes the combined config object
+        selectedPrompt={selectedPrompt} // Pass selected prompt
+        onOpenPrompts={() => setShowPrompts(true)} // New prop to open prompt manager
       />
       
-      {isConfigOpen && (
-        <ModelSelector 
-          selectedCouncil={selectedCouncil}
-          setSelectedCouncil={setSelectedCouncil}
-          selectedChairman={selectedChairman}
-          setSelectedChairman={setSelectedChairman}
-          onClose={() => setIsConfigOpen(false)}
+      {showConfig && ( // Renamed from isConfigOpen
+        <ModelSelector // This component will likely be renamed to CouncilConfig
+          selectedCouncil={councilConfig.council}
+          setSelectedCouncil={(newCouncil) => setCouncilConfig(prev => ({ ...prev, council: newCouncil }))}
+          selectedChairman={councilConfig.chairman}
+          setSelectedChairman={(newChairman) => setCouncilConfig(prev => ({ ...prev, chairman: newChairman }))}
+          onClose={() => setShowConfig(false)}
+        />
+      )}
+
+      {showPrompts && ( // Conditionally render PromptManager
+        <PromptManager
+          onSelect={(prompt) => {
+            setSelectedPrompt(prompt);
+            setShowPrompts(false);
+          }}
+          onClose={() => setShowPrompts(false)}
         />
       )}
     </div>

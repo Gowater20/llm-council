@@ -11,6 +11,8 @@ export default function ChatInterface({
   isLoading,
   onOpenConfig,
   councilConfig,
+  selectedPrompt,
+  onOpenPrompts
 }) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
@@ -137,11 +139,17 @@ export default function ChatInterface({
             Active Memory: {Math.min(10, Math.floor(conversation.messages.length / 2))} council turns
           </div>
         )}
-        {conversation.messages.length === 0 && (
+        {conversation.messages.length >= 0 && ( /* Always show config bar for now for easy access, or just keep it simple */
           <div className="council-config-bar">
+            {selectedPrompt && (
+              <div className="persona-badge" onClick={onOpenPrompts}>
+                <span className="persona-icon">🎭</span>
+                <span className="persona-name">{selectedPrompt.name}</span>
+              </div>
+            )}
             <span className="config-info">
-              Council: <strong>{councilConfig?.selectedCouncil?.length || 0} models</strong> | 
-              Chairman: <strong>{councilConfig?.selectedChairman?.split('/').pop() || 'None'}</strong>
+              Council: <strong>{councilConfig?.council?.length || 0} models</strong> | 
+              Chairman: <strong>{councilConfig?.chairman?.split('/').pop() || 'None'}</strong>
             </span>
             <button className="config-button" onClick={onOpenConfig} disabled={isLoading}>
               Change Council

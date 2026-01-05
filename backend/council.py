@@ -186,13 +186,23 @@ async def stage3_synthesize_final(
     stage1_results: List[Dict[str, Any]],
     stage2_results: List[Dict[str, Any]],
     chairman_model: str = None,
-    history: List[Dict[str, str]] = None
+    history: List[Dict[str, str]] = None,
+    chairman_instruction_override: str = None
 ) -> Dict[str, Any]:
     """
     Stage 3: Chairman synthesizes final response.
     """
     if chairman_model is None:
         chairman_model = CHAIRMAN_MODEL
+
+    chair_instruction = chairman_instruction_override or (
+        """Your task as Chairman is to synthesize all of this information into a single, comprehensive, accurate answer to the user's original question. Consider:
+- The individual responses and their insights
+- The peer rankings and what they reveal about response quality
+- Any patterns of agreement or disagreement
+
+Provide a clear, well-reasoned final answer that represents the council's collective wisdom:"""
+    )
 
     # Build comprehensive context for chairman
     stage1_text = "\n\n".join([
@@ -215,12 +225,7 @@ STAGE 1 - Individual Responses:
 STAGE 2 - Peer Rankings:
 {stage2_text}
 
-Your task as Chairman is to synthesize all of this information into a single, comprehensive, accurate answer to the user's original question. Consider:
-- The individual responses and their insights
-- The peer rankings and what they reveal about response quality
-- Any patterns of agreement or disagreement
-
-Provide a clear, well-reasoned final answer that represents the council's collective wisdom:"""
+{chair_instruction}"""
 
     messages = []
     if history:

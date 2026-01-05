@@ -2,7 +2,7 @@
  * API client for the LLM Council backend.
  */
 
-const API_BASE = 'http://localhost:8001';
+export const API_BASE = 'http://localhost:8001';
 
 export const api = {
   /**
@@ -60,7 +60,7 @@ export const api = {
   /**
    * Send a message in a conversation.
    */
-  async sendMessage(conversationId, content, councilModels = null, chairmanModel = null) {
+  async sendMessage(conversationId, content, councilModels = null, chairmanModel = null, promptId = null) {
     const response = await fetch(
       `${API_BASE}/api/conversations/${conversationId}/message`,
       {
@@ -71,7 +71,8 @@ export const api = {
         body: JSON.stringify({ 
           content,
           council_models: councilModels,
-          chairman_model: chairmanModel
+          chairman_model: chairmanModel,
+          prompt_id: promptId
         }),
       }
     );
@@ -88,9 +89,10 @@ export const api = {
    * @param {function} onEvent - Callback function for each event: (eventType, data) => void
    * @param {Array<string>} councilModels - Optional list of council models
    * @param {string} chairmanModel - Optional chairman model
+   * @param {string} promptId - Optional prompt ID
    * @returns {Promise<void>}
    */
-  async sendMessageStream(conversationId, content, onEvent, councilModels = null, chairmanModel = null) {
+  async sendMessageStream(conversationId, content, onEvent, councilModels = null, chairmanModel = null, promptId = null) {
     const response = await fetch(
       `${API_BASE}/api/conversations/${conversationId}/message/stream`,
       {
@@ -101,7 +103,8 @@ export const api = {
         body: JSON.stringify({ 
           content,
           council_models: councilModels,
-          chairman_model: chairmanModel
+          chairman_model: chairmanModel,
+          prompt_id: promptId
         }),
       }
     );
