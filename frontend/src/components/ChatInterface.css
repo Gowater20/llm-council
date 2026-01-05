@@ -161,3 +161,65 @@
   background: #ccc;
   border-color: #ccc;
 }
+
+/* Council Config Bar */
+.input-area {
+  border-top: 1px solid #e0e0e0;
+  background: #fafafa;
+}
+
+.council-config-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 24px;
+  background: #f0f4f8;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 13px;
+  color: #555;
+}
+
+.config-info strong {
+  color: #333;
+}
+
+.config-button {
+  background: #ffffff;
+  border: 1px solid #ccd6e0;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a90e2;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.config-button:hover:not(:disabled) {
+  background: #4a90e2;
+  color: #fff;
+  border-color: #4a90e2;
+}
+
+/* Total Cost Summary */
+.total-cost-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  margin-top: 16px;
+  border-top: 1px dashed #e0e0e0;
+  font-size: 14px;
+}
+
+.cost-label {
+  color: #666;
+  font-weight: 500;
+}
+
+.cost-value {
+  color: #28a745;
+  font-weight: 700;
+  font-family: monospace;
+}

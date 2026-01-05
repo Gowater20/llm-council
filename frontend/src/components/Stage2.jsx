@@ -35,17 +35,35 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
         {rankings.map((rank, index) => (
           <button
             key={index}
-            className={`tab ${activeTab === index ? 'active' : ''}`}
+            className={`tab ${activeTab === index ? 'active' : ''} status-${rank.status || 'unknown'}`}
             onClick={() => setActiveTab(index)}
           >
-            {rank.model.split('/')[1] || rank.model}
+            <div className="tab-main">
+              {rank.model.split('/')[1] || rank.model}
+              {rank.status === 'error' && <span className="error-dot">!</span>}
+            </div>
+            {rank.cost !== undefined && rank.status === 'success' && (
+              <span className="tab-cost">${rank.cost.toFixed(5)}</span>
+            )}
           </button>
         ))}
       </div>
 
       <div className="tab-content">
         <div className="ranking-model">
-          {rankings[activeTab].model}
+          <div className="model-meta">
+            {rankings[activeTab].model}
+            {rankings[activeTab].usage && rankings[activeTab].status === 'success' && (
+              <span className="usage-info">
+                ({rankings[activeTab].usage.prompt_tokens}p + {rankings[activeTab].usage.completion_tokens}c tokens)
+              </span>
+            )}
+          </div>
+          {rankings[activeTab].status === 'error' && (
+            <div className="model-error-badge">
+              {rankings[activeTab].error || 'Evaluation Failed'}
+            </div>
+          )}
         </div>
         <div className="ranking-content markdown-content">
           <ReactMarkdown>

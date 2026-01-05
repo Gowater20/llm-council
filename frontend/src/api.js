@@ -34,6 +34,17 @@ export const api = {
   },
 
   /**
+   * List all available models.
+   */
+  async listModels() {
+    const response = await fetch(`${API_BASE}/api/models`);
+    if (!response.ok) {
+      throw new Error('Failed to list models');
+    }
+    return response.json();
+  },
+
+  /**
    * Get a specific conversation.
    */
   async getConversation(conversationId) {
@@ -49,7 +60,7 @@ export const api = {
   /**
    * Send a message in a conversation.
    */
-  async sendMessage(conversationId, content) {
+  async sendMessage(conversationId, content, councilModels = null, chairmanModel = null) {
     const response = await fetch(
       `${API_BASE}/api/conversations/${conversationId}/message`,
       {
@@ -57,7 +68,11 @@ export const api = {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ 
+          content,
+          council_models: councilModels,
+          chairman_model: chairmanModel
+        }),
       }
     );
     if (!response.ok) {
@@ -71,9 +86,11 @@ export const api = {
    * @param {string} conversationId - The conversation ID
    * @param {string} content - The message content
    * @param {function} onEvent - Callback function for each event: (eventType, data) => void
+   * @param {Array<string>} councilModels - Optional list of council models
+   * @param {string} chairmanModel - Optional chairman model
    * @returns {Promise<void>}
    */
-  async sendMessageStream(conversationId, content, onEvent) {
+  async sendMessageStream(conversationId, content, onEvent, councilModels = null, chairmanModel = null) {
     const response = await fetch(
       `${API_BASE}/api/conversations/${conversationId}/message/stream`,
       {
@@ -81,7 +98,11 @@ export const api = {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ 
+          content,
+          council_models: councilModels,
+          chairman_model: chairmanModel
+        }),
       }
     );
 

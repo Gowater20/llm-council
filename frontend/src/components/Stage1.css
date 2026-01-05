@@ -52,11 +52,85 @@
   border: 1px solid #e0e0e0;
 }
 
+.tab-main {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.error-dot {
+  background: #ff4d4d;
+  color: #fff;
+  font-size: 10px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
+
+.tab.status-error {
+  border-color: #ffcccc;
+}
+
+.tab.status-error.active {
+  color: #ff4d4d;
+  border-color: #ff4d4d;
+  border-bottom-color: #ffffff;
+}
+
+.model-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
 .model-name {
   color: #888;
   font-size: 12px;
-  margin-bottom: 12px;
   font-family: monospace;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-error-badge {
+  background: #fff0f0;
+  color: #d63031;
+  border: 1px solid #ffcccc;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.text-error {
+  color: #d63031;
+  font-style: italic;
+}
+
+.usage-info {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #666;
+  font-size: 11px;
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.tab-cost {
+  font-size: 10px;
+  color: #28a745;
+  font-weight: normal;
 }
 
 .response-text {

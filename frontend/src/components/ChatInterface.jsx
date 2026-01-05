@@ -9,6 +9,8 @@ export default function ChatInterface({
   conversation,
   onSendMessage,
   isLoading,
+  onOpenConfig,
+  councilConfig,
 }) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
@@ -104,6 +106,14 @@ export default function ChatInterface({
                     </div>
                   )}
                   {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
+
+                  {/* Total Cost Metadata */}
+                  {msg.metadata?.total_cost !== undefined && (
+                    <div className="total-cost-summary">
+                      <span className="cost-label">Total Session Cost:</span>
+                      <span className="cost-value">${msg.metadata.total_cost.toFixed(6)}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -121,24 +131,35 @@ export default function ChatInterface({
       </div>
 
       {conversation.messages.length === 0 && (
-        <form className="input-form" onSubmit={handleSubmit}>
-          <textarea
-            className="message-input"
-            placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isLoading}
-            rows={3}
-          />
-          <button
-            type="submit"
-            className="send-button"
-            disabled={!input.trim() || isLoading}
-          >
-            Send
-          </button>
-        </form>
+        <div className="input-area">
+          <div className="council-config-bar">
+            <span className="config-info">
+              Council: <strong>{councilConfig?.selectedCouncil?.length || 0} models</strong> | 
+              Chairman: <strong>{councilConfig?.selectedChairman?.split('/').pop() || 'None'}</strong>
+            </span>
+            <button className="config-button" onClick={onOpenConfig} disabled={isLoading}>
+              Change Council
+            </button>
+          </div>
+          <form className="input-form" onSubmit={handleSubmit}>
+            <textarea
+              className="message-input"
+              placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isLoading}
+              rows={3}
+            />
+            <button
+              type="submit"
+              className="send-button"
+              disabled={!input.trim() || isLoading}
+            >
+              Send
+            </button>
+          </form>
+        </div>
       )}
     </div>
   );

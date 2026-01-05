@@ -45,7 +45,8 @@ async def query_model(
 
             return {
                 'content': message.get('content'),
-                'reasoning_details': message.get('reasoning_details')
+                'reasoning_details': message.get('reasoning_details'),
+                'usage': data.get('usage', {})
             }
 
     except Exception as e:
@@ -77,3 +78,55 @@ async def query_models_parallel(
 
     # Map models to their responses
     return {model: response for model, response in zip(models, responses)}
+
+
+async def fetch_available_models() -> List[Dict[str, Any]]:
+    """
+    Fetch the list of available models from OpenRouter.
+
+    Returns:
+        List of model dictionaries with id, name, and pricing
+    """
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get("https://openrouter.ai/api/v1/models")
+            response.raise_for_status()
+            data = response.json()
+            
+            models = []
+            for m in data.get('data', []):
+                models.append({
+                    "id": m.get("id"),
+                    "name": m.get("name"),
+                    "pricing": m.get("pricing", {}),
+                    "context_length": m.get("context_length"),
+                    "description": m.get("description")
+                })
+            return models
+    except Exception as e:
+        print(f"Error fetching models from OpenRouter: {e}")
+        return []
+
+
+def calculate_cost(usage: Dict[str, Any], pricing: Dict[str, Any]) -> float:
+    """
+    Calculate the cost of a request based on usage and pricing.
+
+    Args:
+        usage: Usage dictionary from OpenRouter response
+        pricing: Pricing dictionary (prompt and completion cost per 1M tokens)
+
+    Returns:
+        Calculated cost in USD
+    """
+    if not usage or not pricing:
+        return 0.0
+
+    prompt_tokens = usage.get('prompt_tokens', 0)
+    completion_tokens = usage.get('completion_tokens', 0)
+
+    # Pricing is per 1M tokens, so divide by 1,000,000
+    prompt_price = float(pricing.get('prompt', 0)) / 1_000_000
+    completion_price = float(pricing.get('completion', 0)) / 1_000_000
+
+    return (prompt_tokens * prompt_price) + (completion_tokens * completion_price)

@@ -12,6 +12,14 @@ export default function Stage3({ finalResponse }) {
       <div className="final-response">
         <div className="chairman-label">
           Chairman: {finalResponse.model.split('/')[1] || finalResponse.model}
+          {finalResponse.cost !== undefined && (
+            <span className="chairman-cost"> | Cost: ${finalResponse.cost.toFixed(5)}</span>
+          )}
+          {finalResponse.usage && (
+            <span className="usage-info">
+              ({finalResponse.usage.prompt_tokens}p + {finalResponse.usage.completion_tokens}c tokens)
+            </span>
+          )}
         </div>
         <div className="final-text markdown-content">
           <ReactMarkdown>{finalResponse.response}</ReactMarkdown>

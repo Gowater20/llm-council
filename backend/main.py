@@ -10,6 +10,7 @@ import json
 import asyncio
 
 from . import storage
+from .openrouter import fetch_available_models, calculate_cost
 from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
 
 app = FastAPI(title="LLM Council API")
@@ -23,6 +24,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Cache for models
+MODELS_CACHE = {"data": None, "timestamp": 0}
+CACHE_TTL = 3600  # 1 hour
+
 
 class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
@@ -32,6 +37,8 @@ class CreateConversationRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
     content: str
+    council_models: List[str] = None
+    chairman_model: str = None
 
 
 class ConversationMetadata(BaseModel):
@@ -54,6 +61,24 @@ class Conversation(BaseModel):
 async def root():
     """Health check endpoint."""
     return {"status": "ok", "service": "LLM Council API"}
+
+
+@app.get("/api/models")
+async def list_available_models():
+    """List all available models from OpenRouter (with caching)."""
+    import time
+    now = time.time()
+    
+    if MODELS_CACHE["data"] and (now - MODELS_CACHE["timestamp"] < CACHE_TTL):
+        return MODELS_CACHE["data"]
+    
+    models = await fetch_available_models()
+    if models:
+        MODELS_CACHE["data"] = models
+        MODELS_CACHE["timestamp"] = now
+        return models
+    
+    return []
 
 
 @app.get("/api/conversations", response_model=List[ConversationMetadata])
@@ -79,6 +104,12 @@ async def get_conversation(conversation_id: str):
     return conversation
 
 
+async def get_pricing_map():
+    """Get a mapping of model ID to pricing info."""
+    models = await list_available_models()
+    return {m['id']: m['pricing'] for m in models if 'id' in m and 'pricing' in m}
+
+
 @app.post("/api/conversations/{conversation_id}/message")
 async def send_message(conversation_id: str, request: SendMessageRequest):
     """
@@ -101,10 +132,19 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         title = await generate_conversation_title(request.content)
         storage.update_conversation_title(conversation_id, title)
 
+    # Get pricing map for cost calculation
+    pricing_map = await get_pricing_map()
+
     # Run the 3-stage council process
     stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
-        request.content
+        request.content,
+        request.council_models,
+        request.chairman_model,
+        pricing_map
     )
+    
+    # Store pricing map in metadata for the frontend
+    metadata["pricing_map"] = pricing_map
 
     # Add assistant message with all stages
     storage.add_assistant_message(
@@ -147,21 +187,52 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
+            # Get pricing map
+            pricing_map = await get_pricing_map()
+
             # Stage 1: Collect responses
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            stage1_results = await stage1_collect_responses(request.content)
+            stage1_results = await stage1_collect_responses(request.content, request.council_models)
+            
+            if not stage1_results:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'All models failed to respond in Stage 1. Please try again.'})}\n\n"
+                return
+
+            # Calculate cost for stage 1
+            if pricing_map:
+                for res in stage1_results:
+                    if res['model'] in pricing_map:
+                        res['cost'] = calculate_cost(res.get('usage', {}), pricing_map[res['model']])
+
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
             # Stage 2: Collect rankings
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-            stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
+            stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results, request.council_models)
+            
+            # Calculate cost for stage 2
+            if pricing_map:
+                for res in stage2_results:
+                    if res['model'] in pricing_map:
+                        res['cost'] = calculate_cost(res.get('usage', {}), pricing_map[res['model']])
+
             aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
             yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
 
             # Stage 3: Synthesize final answer
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results)
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results, request.chairman_model)
+            
+            # Calculate cost for stage 3
+            if pricing_map and stage3_result['model'] in pricing_map:
+                stage3_result['cost'] = calculate_cost(stage3_result.get('usage', {}), pricing_map[stage3_result['model']])
+
+            # Calculate total cost
+            total_cost = sum(r.get('cost', 0) for r in stage1_results) + \
+                         sum(r.get('cost', 0) for r in stage2_results) + \
+                         stage3_result.get('cost', 0)
+
+            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result, 'metadata': {'total_cost': round(total_cost, 6)}})}\n\n"
 
             # Wait for title generation if it was started
             if title_task:
