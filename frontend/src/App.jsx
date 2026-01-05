@@ -98,14 +98,19 @@ function App() {
   const handleSendMessage = async (content) => {
     if (!activeConversation) return;
 
+    const currentConversationId = activeConversation.id;
+
     setIsLoading(true);
     try {
       // Optimistically add user message to UI
       const userMessage = { role: 'user', content };
-      setActiveConversation((prev) => ({
-        ...prev,
-        messages: [...prev.messages, userMessage],
-      }));
+      setActiveConversation((prev) => {
+        if (prev?.id !== currentConversationId) return prev;
+        return {
+          ...prev,
+          messages: [...prev.messages, userMessage],
+        };
+      });
 
       // Create a partial assistant message that will be updated progressively
       const assistantMessage = {
@@ -122,100 +127,134 @@ function App() {
       };
 
       // Add the partial assistant message
-      setActiveConversation((prev) => ({
-        ...prev,
-        messages: [...prev.messages, assistantMessage],
-      }));
+      setActiveConversation((prev) => {
+        if (prev?.id !== currentConversationId) return prev;
+        return {
+          ...prev,
+          messages: [...prev.messages, assistantMessage],
+        };
+      });
 
       // Send message with streaming
       await api.sendMessageStream(
-        activeConversation.id, 
+        currentConversationId, 
         content, 
         (eventType, event) => {
+          // If the user has switched conversations, do not update state
+          // The backend will still complete the process
+          
           switch (eventType) {
             case 'stage1_start':
               setActiveConversation((prev) => {
+                if (prev?.id !== currentConversationId) return prev;
                 const messages = [...prev.messages];
                 const lastMsg = messages[messages.length - 1];
-                lastMsg.loading.stage1 = true;
+                if (lastMsg) lastMsg.loading.stage1 = true;
                 return { ...prev, messages };
               });
               break;
 
             case 'stage1_complete':
               setActiveConversation((prev) => {
+                if (prev?.id !== currentConversationId) return prev;
                 const messages = [...prev.messages];
                 const lastMsg = messages[messages.length - 1];
-                lastMsg.stage1 = event.data;
-                lastMsg.loading.stage1 = false;
+                if (lastMsg) {
+                  lastMsg.stage1 = event.data;
+                  lastMsg.loading.stage1 = false;
+                }
                 return { ...prev, messages };
               });
               break;
 
             case 'stage2_start':
               setActiveConversation((prev) => {
+                if (prev?.id !== currentConversationId) return prev;
                 const messages = [...prev.messages];
                 const lastMsg = messages[messages.length - 1];
-                lastMsg.loading.stage2 = true;
+                if (lastMsg) lastMsg.loading.stage2 = true;
                 return { ...prev, messages };
               });
               break;
 
             case 'stage2_complete':
               setActiveConversation((prev) => {
+                if (prev?.id !== currentConversationId) return prev;
                 const messages = [...prev.messages];
                 const lastMsg = messages[messages.length - 1];
-                lastMsg.stage2 = event.data;
-                lastMsg.metadata = event.metadata;
-                lastMsg.loading.stage2 = false;
+                if (lastMsg) {
+                  lastMsg.stage2 = event.data;
+                  lastMsg.metadata = event.metadata;
+                  lastMsg.loading.stage2 = false;
+                }
                 return { ...prev, messages };
               });
               break;
 
             case 'stage3_start':
               setActiveConversation((prev) => {
+                if (prev?.id !== currentConversationId) return prev;
                 const messages = [...prev.messages];
                 const lastMsg = messages[messages.length - 1];
-                lastMsg.loading.stage3 = true;
+                if (lastMsg) lastMsg.loading.stage3 = true;
                 return { ...prev, messages };
               });
               break;
 
             case 'stage3_complete':
               setActiveConversation((prev) => {
+                if (prev?.id !== currentConversationId) return prev;
                 const messages = [...prev.messages];
                 const lastMsg = messages[messages.length - 1];
-                lastMsg.stage3 = event.data;
-                lastMsg.loading.stage3 = false;
-                // Add total cost to metadata if present
-                if (event.metadata?.total_cost !== undefined) {
-                  lastMsg.metadata = { 
-                    ...lastMsg.metadata, 
-                    total_cost: event.metadata.total_cost 
-                  };
+                if (lastMsg) {
+                  lastMsg.stage3 = event.data;
+                  lastMsg.loading.stage3 = false;
+                  // Add total cost to metadata if present
+                  if (event.metadata?.total_cost !== undefined) {
+                    lastMsg.metadata = { 
+                      ...lastMsg.metadata, 
+                      total_cost: event.metadata.total_cost 
+                    };
+                  }
                 }
                 return { ...prev, messages };
               });
               break;
 
-          case 'title_complete':
+            case 'title_complete':
               // Reload conversations to get updated title
+              // This is safe to call even if switched, but maybe we only want to reload list?
+              // Currently loadConversations replaces the whole list.
               loadConversations();
               break;
 
             case 'complete':
               // Stream complete, reload conversations list
               loadConversations();
-              setIsLoading(false);
+              // Only turn off loading if we are still on the same convo, 
+              // otherwise the new convo might interpret this as its own loading state?
+              // Actually isLoading is global/per-view state. 
+              // If we switched, the new view might not be loading.
+              // But we should check.
+              setActiveConversation((prev) => {
+                 if (prev?.id === currentConversationId) {
+                     setIsLoading(false);
+                 }
+                 return prev;
+              });
               break;
 
             case 'error':
               console.error('Stream error:', event.message);
-              setIsLoading(false);
+              setActiveConversation((prev) => {
+                 if (prev?.id === currentConversationId) {
+                     setIsLoading(false);
+                 }
+                 return prev;
+              });
               break;
 
             default:
-              // Handled by updateConversationState
               break;
           }
         }, 
@@ -226,10 +265,13 @@ function App() {
     } catch (error) {
       console.error('Failed to send message:', error);
       // Remove optimistic messages on error
-      setActiveConversation((prev) => ({
-        ...prev,
-        messages: prev.messages.slice(0, -2),
-      }));
+      setActiveConversation((prev) => {
+        if (prev?.id !== currentConversationId) return prev;
+        return {
+          ...prev,
+          messages: prev.messages.slice(0, -2),
+        };
+      });
       setIsLoading(false);
     }
   };

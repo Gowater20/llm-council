@@ -1,13 +1,14 @@
 """FastAPI backend for LLM Council."""
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import List, Dict, Any
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional, Union, Literal
 import uuid
 import json
 import asyncio
+import time
 
 from . import storage
 from .openrouter import fetch_available_models, calculate_cost
@@ -18,7 +19,7 @@ app = FastAPI(title="LLM Council API")
 # Enable CORS for local development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],  # Allow * for external tools like Cursor
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,7 +36,7 @@ class CreateConversationRequest(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
-    """Request to send a message in a conversation."""
+    """Request to send a message in a conversation (Internal App API)."""
     content: str
     council_models: List[str] = None
     chairman_model: str = None
@@ -58,10 +59,7 @@ class Conversation(BaseModel):
     messages: List[Dict[str, Any]]
 
 
-@app.get("/")
-async def root():
-    """Health check endpoint."""
-    return {"status": "ok", "service": "LLM Council API"}
+
 
 
 @app.get("/api/models")
@@ -126,7 +124,6 @@ try:
 except ImportError:
     from prompts import load_prompts, add_prompt, delete_prompt, get_prompt_by_id
 
-# ... (existing code)
 
 class PromptModel(BaseModel):
     id: str
@@ -162,11 +159,15 @@ def prepare_history(messages: List[Dict[str, Any]], system_content: str = None) 
     for msg in relevant_messages:
         if msg.get("role") == "user":
             history.append({"role": "user", "content": msg["content"]})
-        elif msg.get("role") == "assistant" and "stage3" in msg:
-            response = msg["stage3"].get("response", "")
-            if response and not response.startswith("Error:"):
-                history.append({"role": "assistant", "content": response})
-    
+        elif msg.get("role") == "assistant":
+            # Check if this is a Council message structure or a standard OpenAI message
+            if "stage3" in msg:
+                response = msg["stage3"].get("response", "")
+                if response and not response.startswith("Error:"):
+                    history.append({"role": "assistant", "content": response})
+            elif "content" in msg:
+                history.append({"role": "assistant", "content": msg["content"]})
+
     # Use provided system content or default
     final_system_content = system_content or (
         "You are an expert member of the LLM Council. This is a multi-turn conversation. "
@@ -179,7 +180,17 @@ def prepare_history(messages: List[Dict[str, Any]], system_content: str = None) 
         "content": final_system_content
     }
     
-    history.insert(0, system_hint)
+    # Check if there is already a system message in the input messages (for OpenAI API)
+    has_system = any(m.get("role") == "system" for m in messages)
+    if not has_system:
+        history.insert(0, system_hint)
+    else:
+        # If input messages have system prompt, we might want to respect it,
+        # but the Council logic relies on the specific "Council Member" persona.
+        # For now, let's prepend our hint anyway, or maybe append it to the existing system prompt.
+        # Simpler approach: Prepend our Council context instructions as a system message.
+        history.insert(0, system_hint)
+        
     return history
 
 
@@ -268,10 +279,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
     async def event_generator():
         try:
             # Check if this is the first message (after adding user message)
-            is_first_message = len(conversation["messages"]) == 0 # This will be 0 if it was truly the first message before adding the user message.
-            # If the conversation was empty before adding the user message, it's the first message.
-            # The `conversation` object loaded here is before the `add_message` call, so its `messages` list reflects the state before the current user message.
-            # So, if `len(conversation["messages"])` is 0, it means the user message just added is the first one.
+            is_first_message = len(conversation["messages"]) == 0 
             
             # Start title generation in parallel (don't await yet)
             title_task = None
@@ -352,7 +360,314 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
         }
     )
 
+class OpenAIMessage(BaseModel):
+    role: str
+    content: Optional[Union[str, List[Any]]] = None
+    name: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    function_call: Optional[Dict[str, Any]] = None
+
+    class Config:
+        extra = "allow"
+
+class OpenAIChatCompletionRequest(BaseModel):
+    model: str
+    messages: Optional[List[OpenAIMessage]] = None
+    input: Optional[List[OpenAIMessage]] = None # Cursor sometimes sends 'input' instead of 'messages'
+    temperature: Optional[float] = 1.0
+    top_p: Optional[float] = 1.0
+    n: Optional[int] = 1
+    stream: Optional[bool] = False
+    stop: Optional[Union[str, List[str]]] = None
+    max_tokens: Optional[int] = None
+    max_completion_tokens: Optional[int] = None # Support new field
+    presence_penalty: Optional[float] = 0.0
+    frequency_penalty: Optional[float] = 0.0
+    user: Optional[str] = None
+    # Allow tools/functions even if we don't support them yet, to avoid 422
+    tools: Optional[List[Dict[str, Any]]] = None
+    tool_choice: Optional[Union[str, Dict[str, Any]]] = None
+    stream_options: Optional[Dict[str, Any]] = None
+
+    class Config:
+        extra = "allow"
+
+class OpenAIUsage(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+class OpenAIChoice(BaseModel):
+    index: int
+    message: OpenAIMessage
+    finish_reason: Optional[str] = "stop"
+
+class OpenAIChatCompletionResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    created: int
+    model: str
+    choices: List[OpenAIChoice]
+    usage: OpenAIUsage
+
+class OpenAIChoiceDelta(BaseModel):
+    index: int
+    delta: Dict[str, Any]
+    finish_reason: Optional[str] = None
+
+class OpenAIChatCompletionChunk(BaseModel):
+    id: str
+    object: str = "chat.completion.chunk"
+    created: int
+    model: str
+    choices: List[OpenAIChoiceDelta]
+
+
+# --- Routes ---
+
+# Logging Middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    # print(f"Request: {request.method} {request.url}") # Reduce noise if needed
+    try:
+        response = await call_next(request)
+        # print(f"Response: {response.status_code}")
+        return response
+    except Exception as e:
+        print(f"Request processing failed: {e}")
+        raise
+
+@app.get("/")
+async def root():
+    """Health check endpoint."""
+    return {"status": "ok", "service": "LLM Council API"}
+
+# --- OpenAI Compatible Endpoint ---
+
+class OpenAIModel(BaseModel):
+    id: str
+    object: str = "model"
+    created: int = 0
+    owned_by: str = "council"
+
+class OpenAIModelList(BaseModel):
+    object: str = "list"
+    data: List[OpenAIModel]
+
+@app.get("/v1/models")
+async def list_openai_models():
+    """
+    List models in OpenAI format.
+    Required by some clients (like Cursor/VS Code) to verify connectivity.
+    """
+    return OpenAIModelList(
+        data=[
+            OpenAIModel(id="council-llm", created=int(time.time()), owned_by="llm-council"),
+            OpenAIModel(id="gpt-4o", created=int(time.time()), owned_by="llm-council"), # Alias
+            # We can also expose the underlying OpenRouter models if we want
+            # but for now let's just expose the main one
+        ]
+    )
+
+@app.post("/v1/chat/completions")
+async def openai_chat_completions(request: OpenAIChatCompletionRequest):
+    """
+    OpenAI-compatible endpoint for LLM Council.
+    This allows tools like Cursor, VS Code (Continue, Cline), etc. to use the Council.
+    """
+    try:
+        # 1. Extract the latest user query from messages
+        messages = request.messages or request.input
+        
+        if not messages:
+            print(f"DEBUG: Body received: {request.dict()}")
+            raise HTTPException(status_code=400, detail="No messages or input provided")
+        
+        # Find the last message from user
+        user_query = ""
+        for msg in reversed(messages):
+            if msg.role == "user":
+                user_query = msg.content
+                # Handle list content (multimodal) - just take the text parts
+                if isinstance(user_query, list):
+                    text_parts = [p.get('text', '') for p in user_query if p.get('type') == 'text']
+                    user_query = " ".join(text_parts)
+                elif user_query is None:
+                     user_query = "" # Skip null content
+                break
+        
+        if not user_query:
+            # Fallback: if no user message found (e.g. only system), try to use the last message
+            if messages:
+                 last_msg = messages[-1]
+                 if last_msg.content:
+                      user_query = last_msg.content
+                      if isinstance(user_query, list):
+                            text_parts = [p.get('text', '') for p in user_query if p.get('type') == 'text']
+                            user_query = " ".join(text_parts)
+            
+            if not user_query:
+                 raise HTTPException(status_code=400, detail="No user message found")
+
+        # 2. Prepare history from previous messages
+        # We need to convert OpenAIMessage objects to dicts
+        raw_messages = [m.dict() for m in messages[:-1]] # Exclude the last one which is the current query (added by council logic typically, but let's be safe)
+        if messages[-1].role == "user":
+             raw_messages = [m.dict() for m in messages[:-1]]
+        else:
+             raw_messages = [m.dict() for m in messages]
+
+        history = prepare_history(raw_messages)
+
+        # 3. Handle System Prompts if present in the request
+        system_content = None
+        for msg in messages:
+            if msg.role == "system":
+                system_content = msg.content
+                break
+
+        # 4. Run the Full Council
+        # Note: We are NOT using the 'model' parameter from the request to select the Council.
+        # The Council configuration is determined by the server's environment/config.
+        # Ideally, we could map 'model' to different council presets if we wanted.
+        
+        # We create a temporary pricing map
+        pricing_map = await get_pricing_map()
+
+        # Execute!
+        # Note: This is a blocking operation for the client unless we stream.
+        # For the first version, we'll wait for the full response (non-streaming).
+        
+        if request.stream:
+             # Streaming support
+             async def openai_stream_generator():
+                # We start only with a "role" chunk to acknowledge the request immediately
+                request_id = str(uuid.uuid4())
+                created_time = int(time.time())
+                
+                # Yield initial chunk to establish connection
+                initial_chunk = OpenAIChatCompletionChunk(
+                    id=request_id,
+                    created=created_time,
+                    model=request.model,
+                    choices=[
+                        OpenAIChoiceDelta(
+                            index=0,
+                            delta={"role": "assistant", "content": ""},
+                            finish_reason=None
+                        )
+                    ]
+                )
+                yield f"data: {initial_chunk.json()}\n\n"
+
+                # Run council in background
+                task = asyncio.create_task(run_full_council(
+                    user_query,
+                    council_models=None, # Use default from config
+                    chairman_model=None, # Use default from config
+                    pricing_map=pricing_map,
+                    history=history
+                ))
+
+                # Wait for task while sending keep-alive comments
+                while not task.done():
+                    # SSE comment to keep connection open (ignored by clients)
+                    yield ": keep-alive\n\n" 
+                    await asyncio.sleep(0.5)
+                
+                # Get result
+                try:
+                    stage1, stage2, stage3, meta = await task
+                except Exception as e:
+                     # If task failed, yield error
+                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                    return
+
+                final_content = stage3.get("response", "")
+                
+                # Send the content in small chunks to simulate streaming (or just one big chunk)
+                chunk_size = 100
+                for i in range(0, len(final_content), chunk_size):
+                    chunk_text = final_content[i:i+chunk_size]
+                    chunk = OpenAIChatCompletionChunk(
+                        id=request_id,
+                        created=created_time,
+                        model=request.model,
+                        choices=[
+                            OpenAIChoiceDelta(
+                                index=0,
+                                delta={"content": chunk_text},
+                                finish_reason=None
+                            )
+                        ]
+                    )
+                    yield f"data: {chunk.json()}\n\n"
+                    await asyncio.sleep(0.01) # Tiny sleep to be polite
+
+                # Send finish
+                end_chunk = OpenAIChatCompletionChunk(
+                        id=request_id,
+                        created=created_time,
+                        model=request.model,
+                        choices=[
+                            OpenAIChoiceDelta(
+                                index=0,
+                                delta={},
+                                finish_reason="stop"
+                            )
+                        ]
+                    )
+                yield f"data: {end_chunk.json()}\n\n"
+                yield "data: [DONE]\n\n"
+
+             return StreamingResponse(
+                openai_stream_generator(),
+                media_type="text/event-stream"
+            )
+
+        else:
+            # Non-streaming response
+            stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
+                user_query,
+                council_models=None, # Use default from config
+                chairman_model=None, # Use default from config
+                pricing_map=pricing_map,
+                history=history
+            )
+
+            final_response_text = stage3_result.get("response", "")
+            
+            # Simple token estimation
+            completion_tokens = len(final_response_text) // 4
+            prompt_tokens = len(user_query) // 4
+            
+            return OpenAIChatCompletionResponse(
+                id=str(uuid.uuid4()),
+                created=int(time.time()),
+                model=request.model, # Echo back the requested model
+                choices=[
+                    OpenAIChoice(
+                        index=0,
+                        message=OpenAIMessage(
+                            role="assistant",
+                            content=final_response_text
+                        ),
+                        finish_reason="stop"
+                    )
+                ],
+                usage=OpenAIUsage(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=prompt_tokens + completion_tokens
+                )
+            )
+
+    except Exception as e:
+        print(f"Error in OpenAI API adapter: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
+

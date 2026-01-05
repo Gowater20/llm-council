@@ -1,0 +1,29 @@
+Starting LLM Council...
+
+Cleaning up existing processes on ports 8001 and 5173...
+Starting backend on http://localhost:8001...
+/Users/fabio/Coding/llm council/llm-council/backend/main.py:64: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  class OpenAIMessage(BaseModel):
+/Users/fabio/Coding/llm council/llm-council/backend/main.py:74: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  class OpenAIChatCompletionRequest(BaseModel):
+INFO:     Started server process [8571]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+Starting frontend on http://localhost:5173...
+
+✓ LLM Council is running!
+  Backend:  http://localhost:8001
+  Frontend: http://localhost:5173
+
+Press Ctrl+C to stop both servers
+
+> frontend@0.0.0 dev
+> vite
+
+
+  VITE v7.2.4  ready in 87 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+./start.sh: line 37:  8585 Killed: 9               npm run dev
