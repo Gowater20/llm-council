@@ -104,10 +104,45 @@ async def get_conversation(conversation_id: str):
     return conversation
 
 
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    """Delete a specific conversation."""
+    conversation = storage.get_conversation(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    storage.delete_conversation(conversation_id)
+    return {"status": "success", "message": "Conversation deleted"}
+
+
 async def get_pricing_map():
     """Get a mapping of model ID to pricing info."""
     models = await list_available_models()
     return {m['id']: m['pricing'] for m in models if 'id' in m and 'pricing' in m}
+
+
+def prepare_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """
+    Prepare a simplified history for the council.
+    Only includes User content and successful Stage 3 Chairman response content.
+    """
+    history = []
+    for msg in messages:
+        if msg.get("role") == "user":
+            history.append({"role": "user", "content": msg["content"]})
+        elif msg.get("role") == "assistant" and "stage3" in msg:
+            response = msg["stage3"].get("response", "")
+            # Skip error responses
+            if response and not response.startswith("Error:"):
+                history.append({"role": "assistant", "content": response})
+    
+    # If we have history, add a small system hint as the first message to help the LLMs
+    if history:
+        history.insert(0, {
+            "role": "system", 
+            "content": "You are participating in a multi-turn conversation. Focus on the previous context while answering the current request."
+        })
+        
+    return history
 
 
 @app.post("/api/conversations/{conversation_id}/message")
@@ -135,12 +170,16 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
     # Get pricing map for cost calculation
     pricing_map = await get_pricing_map()
 
+    # Prepare history for context
+    history = prepare_history(conversation["messages"])
+
     # Run the 3-stage council process
     stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
         request.content,
         request.council_models,
         request.chairman_model,
-        pricing_map
+        pricing_map,
+        history
     )
     
     # Store pricing map in metadata for the frontend
@@ -190,9 +229,12 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             # Get pricing map
             pricing_map = await get_pricing_map()
 
+            # Prepare history for context
+            history = prepare_history(conversation["messages"])
+
             # Stage 1: Collect responses
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            stage1_results = await stage1_collect_responses(request.content, request.council_models)
+            stage1_results = await stage1_collect_responses(request.content, request.council_models, history)
             
             if not stage1_results:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'All models failed to respond in Stage 1. Please try again.'})}\n\n"
@@ -221,7 +263,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
             # Stage 3: Synthesize final answer
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results, request.chairman_model)
+            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results, request.chairman_model, history)
             
             # Calculate cost for stage 3
             if pricing_map and stage3_result['model'] in pricing_map:

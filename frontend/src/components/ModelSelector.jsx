@@ -47,6 +47,23 @@ export default function ModelSelector({
     });
   }, [models, search, filterFree]);
 
+  const groupedModels = useMemo(() => {
+    const groups = {};
+    filteredModels.forEach(m => {
+      const provider = m.id.split('/')[0] || 'other';
+      if (!groups[provider]) groups[provider] = [];
+      groups[provider].push(m);
+    });
+    return groups;
+  }, [filteredModels]);
+
+  const selectedModelNames = useMemo(() => {
+    return selectedCouncil.map(id => {
+      const model = models.find(m => m.id === id);
+      return model ? model.name : id;
+    });
+  }, [selectedCouncil, models]);
+
   const toggleCouncil = (modelId) => {
     if (selectedCouncil.includes(modelId)) {
       setSelectedCouncil(selectedCouncil.filter(id => id !== modelId));
@@ -59,6 +76,10 @@ export default function ModelSelector({
     const p = parseFloat(price || 0);
     if (p === 0) return 'Free';
     return `$${(p * 1).toFixed(4)} / 1M`;
+  };
+
+  const deselectAll = () => {
+    setSelectedCouncil([]);
   };
 
   if (loading) return <div className="model-selector-modal loading">Loading models...</div>;
@@ -91,11 +112,25 @@ export default function ModelSelector({
         </div>
 
         <div className="selection-summary">
-          <div className="summary-item">
-            <strong>Council:</strong> {selectedCouncil.length} models
+          <div className="summary-item main">
+            <div className="summary-header">
+              <strong>Council:</strong> {selectedCouncil.length} models
+              {selectedCouncil.length > 0 && (
+                <button className="deselect-all-btn" onClick={deselectAll}>Deselect All</button>
+              )}
+            </div>
+            {selectedCouncil.length > 0 && (
+              <div className="selected-models-chips">
+                {selectedModelNames.map((name, i) => (
+                  <span key={i} className="model-chip" onClick={() => toggleCouncil(selectedCouncil[i])}>
+                    {name} <span className="chip-close">&times;</span>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="summary-item">
-            <strong>Chairman:</strong> {selectedChairman || 'Not selected'}
+          <div className="summary-item chairman">
+            <strong>Chairman:</strong> {models.find(m => m.id === selectedChairman)?.name || selectedChairman || 'Not selected'}
           </div>
         </div>
 
@@ -110,35 +145,42 @@ export default function ModelSelector({
               </tr>
             </thead>
             <tbody>
-              {filteredModels.map(model => (
-                <tr key={model.id} className={selectedCouncil.includes(model.id) ? 'selected-row' : ''}>
-                  <td>
-                    <input 
-                      type="checkbox" 
-                      checked={selectedCouncil.includes(model.id)}
-                      onChange={() => toggleCouncil(model.id)}
-                    />
-                  </td>
-                  <td>
-                    <input 
-                      type="radio" 
-                      name="chairman"
-                      checked={selectedChairman === model.id}
-                      onChange={() => setSelectedChairman(model.id)}
-                    />
-                  </td>
-                  <td>
-                    <div className="model-info">
-                      <span className="model-name">{model.name}</span>
-                      <span className="model-id">{model.id}</span>
-                    </div>
-                  </td>
-                  <td className="model-pricing">
-                    <span className={`price-badge ${parseFloat(model.pricing?.prompt) === 0 ? 'free' : 'paid'}`}>
-                      {formatPrice(model.pricing?.prompt)} / {formatPrice(model.pricing?.completion)}
-                    </span>
-                  </td>
-                </tr>
+              {Object.entries(groupedModels).map(([provider, providerModels]) => (
+                <React.Fragment key={provider}>
+                  <tr className="group-header">
+                    <td colSpan="4">{provider.toUpperCase()}</td>
+                  </tr>
+                  {providerModels.map(model => (
+                    <tr key={model.id} className={selectedCouncil.includes(model.id) ? 'selected-row' : ''}>
+                      <td>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedCouncil.includes(model.id)}
+                          onChange={() => toggleCouncil(model.id)}
+                        />
+                      </td>
+                      <td>
+                        <input 
+                          type="radio" 
+                          name="chairman"
+                          checked={selectedChairman === model.id}
+                          onChange={() => setSelectedChairman(model.id)}
+                        />
+                      </td>
+                      <td>
+                        <div className="model-info">
+                          <span className="model-name">{model.name}</span>
+                          <span className="model-id">{model.id}</span>
+                        </div>
+                      </td>
+                      <td className="model-pricing">
+                        <span className={`price-badge ${parseFloat(model.pricing?.prompt) === 0 ? 'free' : 'paid'}`}>
+                          {formatPrice(model.pricing?.prompt)} / {formatPrice(model.pricing?.completion)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
               ))}
             </tbody>
           </table>

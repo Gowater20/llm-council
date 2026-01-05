@@ -61,7 +61,7 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
           </div>
           {rankings[activeTab].status === 'error' && (
             <div className="model-error-badge">
-              {rankings[activeTab].error || 'Evaluation Failed'}
+              {rankings[activeTab].error || 'Failed to get ranking'}
             </div>
           )}
         </div>

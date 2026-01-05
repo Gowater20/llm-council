@@ -43,7 +43,7 @@ export default function Stage1({ responses }) {
           </div>
           {responses[activeTab].status === 'error' && (
             <div className="model-error-badge">
-              {responses[activeTab].error || 'Response Failed'}
+              {responses[activeTab].error || 'Failed to get response'}
             </div>
           )}
         </div>

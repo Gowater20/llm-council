@@ -6,6 +6,7 @@ export default function Sidebar({
   currentConversationId,
   onSelectConversation,
   onNewConversation,
+  onDeleteConversation,
 }) {
   return (
     <div className="sidebar">
@@ -28,8 +29,17 @@ export default function Sidebar({
               }`}
               onClick={() => onSelectConversation(conv.id)}
             >
-              <div className="conversation-title">
-                {conv.title || 'New Conversation'}
+              <div className="conversation-title-row">
+                <div className="conversation-title">
+                  {conv.title || 'New Conversation'}
+                </div>
+                <button 
+                  className="delete-conv-btn" 
+                  onClick={(e) => onDeleteConversation(e, conv.id)}
+                  title="Delete Conversation"
+                >
+                  &times;
+                </button>
               </div>
               <div className="conversation-meta">
                 {conv.message_count} messages

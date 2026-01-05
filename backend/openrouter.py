@@ -38,20 +38,29 @@ async def query_model(
                 headers=headers,
                 json=payload
             )
-            response.raise_for_status()
-
-            data = response.json()
-            message = data['choices'][0]['message']
-
-            return {
-                'content': message.get('content'),
-                'reasoning_details': message.get('reasoning_details'),
-                'usage': data.get('usage', {})
-            }
-
+            if response.status_code == 200:
+                data = response.json()
+                choices = data.get('choices', [])
+                if choices:
+                    return {
+                        "content": choices[0].get('message', {}).get('content', ''),
+                        "usage": data.get('usage', {})
+                    }
+                return {"error": "Empty choices from model", "status": 200}
+            else:
+                error_msg = f"Error querying {model}: {response.status_code}"
+                try:
+                    error_detail = response.json().get('error', {}).get('message', '')
+                    if error_detail:
+                        error_msg += f" - {error_detail}"
+                except:
+                    error_msg += f" - {response.text[:100]}"
+                print(error_msg)
+                return {"error": error_msg, "status": response.status_code}
     except Exception as e:
-        print(f"Error querying model {model}: {e}")
-        return None
+        error_msg = f"Exception querying {model}: {str(e)}"
+        print(error_msg)
+        return {"error": error_msg, "status": 500}
 
 
 async def query_models_parallel(
