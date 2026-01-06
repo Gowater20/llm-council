@@ -25,7 +25,7 @@ elif council_type == 'free':
         "mistralai/mistral-7b-instruct:free",
     ]
     # Use a solid free model as Chairman
-    CHAIRMAN_MODEL = "deepseek/deepseek-r1-0528:free"
+    CHAIRMAN_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 
 # OpenRouter API endpoint
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"

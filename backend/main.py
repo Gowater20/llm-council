@@ -522,7 +522,13 @@ async def openai_chat_completions(request: OpenAIChatCompletionRequest):
         else:
              raw_messages = [m.dict() for m in messages]
 
-        history = prepare_history(raw_messages)
+        # For OpenAI endpoint (used by tools like Glide/Cursor), we should NOT truncate history
+        # via prepare_history because these tools manage their own context window.
+        # We manually construct the history list.
+        history = []
+        for msg in raw_messages:
+            if msg.get('role') in ['user', 'assistant', 'system']:
+                history.append(msg)
 
         # 3. Handle System Prompts if present in the request
         system_content = None
@@ -566,12 +572,14 @@ async def openai_chat_completions(request: OpenAIChatCompletionRequest):
                 yield f"data: {initial_chunk.json()}\n\n"
 
                 # Run council in background
+                # Pass system_content as chairman_instruction_override to ensure tools are passed
                 task = asyncio.create_task(run_full_council(
                     user_query,
                     council_models=None, # Use default from config
                     chairman_model=None, # Use default from config
                     pricing_map=pricing_map,
-                    history=history
+                    history=history,
+                    chairman_instruction_override=system_content
                 ))
 
                 # Wait for task while sending keep-alive comments
@@ -637,7 +645,8 @@ async def openai_chat_completions(request: OpenAIChatCompletionRequest):
                 council_models=None, # Use default from config
                 chairman_model=None, # Use default from config
                 pricing_map=pricing_map,
-                history=history
+                history=history,
+                chairman_instruction_override=system_content
             )
 
             final_response_text = stage3_result.get("response", "")
