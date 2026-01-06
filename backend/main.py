@@ -222,13 +222,18 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
     # Prepare history for context
     history = prepare_history(conversation["messages"])
 
+    # Get prompt settings
+    prompt_settings = get_prompt_by_id(request.prompt_id or "default")
+    chairman_instruction = prompt_settings["chairman_instruction"] if prompt_settings else None
+
     # Run the 3-stage council process
     stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
         request.content,
         request.council_models,
         request.chairman_model,
         pricing_map,
-        history
+        history,
+        chairman_instruction_override=chairman_instruction
     )
     
     # Store pricing map in metadata for the frontend
@@ -317,7 +322,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
             # Stage 3: Synthesize final answer
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results, request.chairman_model, history)
+            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results, request.chairman_model, history, chairman_instruction_override=chairman_instruction)
             
             # Calculate cost for stage 3
             if pricing_map and stage3_result['model'] in pricing_map:

@@ -336,7 +336,8 @@ async def run_full_council(
     council_models: List[str] = None,
     chairman_model: str = None,
     pricing_map: Optional[Dict[str, Dict[str, Any]]] = None,
-    history: List[Dict[str, str]] = None
+    history: List[Dict[str, str]] = None,
+    chairman_instruction_override: str = None
 ) -> Tuple[List, List, Dict, Dict]:
     """Run the complete 3-stage council process."""
     stage1_results = await stage1_collect_responses(user_query, council_models, history)
@@ -356,7 +357,8 @@ async def run_full_council(
         stage1_results,
         stage2_results,
         chairman_model,
-        history
+        history,
+        chairman_instruction_override
     )
 
     total_cost = 0.0
