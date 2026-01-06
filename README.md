@@ -21,11 +21,13 @@ This project was 99% vibe coded as a fun Saturday hack because I wanted to explo
 The project uses [uv](https://docs.astral.sh/uv/) for project management.
 
 **Backend:**
+
 ```bash
 uv sync
 ```
 
 **Frontend:**
+
 ```bash
 cd frontend
 npm install
@@ -60,6 +62,7 @@ CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
 ## Running the Application
 
 **Option 1: Use the start script**
+
 ```bash
 ./start.sh
 ```
@@ -67,11 +70,13 @@ CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
 **Option 2: Run manually**
 
 Terminal 1 (Backend):
+
 ```bash
 uv run python -m backend.main
 ```
 
 Terminal 2 (Frontend):
+
 ```bash
 cd frontend
 npm run dev
@@ -81,7 +86,31 @@ Then open http://localhost:5173 in your browser.
 
 ## Tech Stack
 
-- **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
-- **Frontend:** React + Vite, react-markdown for rendering
-- **Storage:** JSON files in `data/conversations/`
-- **Package Management:** uv for Python, npm for JavaScript
+-   **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
+-   **Frontend:** React + Vite, react-markdown for rendering
+-   **Storage:** JSON files in `data/conversations/`
+-   **Package Management:** uv for Python, npm for JavaScript
+
+## IDE Integration (Cursor, Cline/VS Code)
+
+You can use **LLM Council** as a custom model inside your favorite editor.
+
+### 1. Cline / VS Code (Recommended)
+
+Since Cline runs locally, it can connect directly to your server without any tunnels.
+
+1.  **Provider**: OpenAI Compatible
+2.  **Base URL**: `http://127.0.0.1:8001/v1`
+3.  **API Key**: `sk-council` (can be any string)
+4.  **Model ID**: `gpt-4o` (or `council-llm`)
+
+### 2. Cursor (Requires Tunnel)
+
+Cursor blocks `localhost` connections. You must use `ngrok` to create a public tunnel.
+
+1.  Start ngrok: `ngrok http 8001`
+2.  Copy the forwarding URL (e.g., `https://xxxx.ngrok-free.app`)
+3.  **Cursor Settings -> Models**:
+    -   **Base URL**: `https://xxxx.ngrok-free.app/v1`
+    -   **API Key**: `sk-council`
+    -   **Model Name**: `gpt-4o` (Important: use this name to avoid "unsupported model" errors)
